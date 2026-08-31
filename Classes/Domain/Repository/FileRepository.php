@@ -7,7 +7,6 @@ use TYPO3\CMS\Core\Configuration\Exception\ExtensionConfigurationPathDoesNotExis
 use TYPO3\CMS\Core\Configuration\ExtensionConfiguration;
 use TYPO3\CMS\Core\Database\Connection;
 use TYPO3\CMS\Core\Database\ConnectionPool;
-use TYPO3\CMS\Core\Imaging\IconFactory;
 use TYPO3\CMS\Core\Resource\Exception\ResourceDoesNotExistException;
 use TYPO3\CMS\Core\Resource\File;
 use TYPO3\CMS\Core\Resource\FileInterface;
@@ -16,10 +15,13 @@ use TYPO3\CMS\Core\Resource\ProcessedFile;
 use TYPO3\CMS\Core\SingletonInterface;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 use WebVision\WvFileCleanup\FileFacade;
+use WebVision\WvFileCleanup\FileFacadeFactory;
 use WebVision\WvFileCleanup\Service\FileCollectionService;
 
 /**
- * Class FileRepository
+ * Provide FileList related methods.
+ *
+ * @internal and not part of public API.
  */
 class FileRepository implements SingletonInterface
 {
@@ -43,16 +45,17 @@ class FileRepository implements SingletonInterface
      */
     protected $fileCollectionService;
 
+    protected FileFacadeFactory $fileFacadeFactory;
+
     /**
      * @throws ExtensionConfigurationExtensionNotConfiguredException
      * @throws ExtensionConfigurationPathDoesNotExistException
      */
-    public function __construct(
-        private readonly IconFactory $iconFactory
-    )
+    public function __construct()
     {
         $this->connection = GeneralUtility::makeInstance(ConnectionPool::class);
         $this->fileCollectionService = GeneralUtility::makeInstance(FileCollectionService::class);
+        $this->fileFacadeFactory = GeneralUtility::makeInstance(FileFacadeFactory::class);
         $this->fileNameDenyPattern = GeneralUtility::makeInstance(ExtensionConfiguration::class)
             ->get('wv_file_cleanup', 'fileNameDenyPattern');
         $this->pathDenyPattern = GeneralUtility::makeInstance(ExtensionConfiguration::class)
@@ -68,8 +71,8 @@ class FileRepository implements SingletonInterface
     public function findUnusedFile(
         Folder $folder,
         bool $recursive = true,
-        string $fileDenyPattern = null,
-        string $pathDenyPattern = null
+        ?string $fileDenyPattern = null,
+        ?string $pathDenyPattern = null
     ): array {
         $this->fileCollectionService->initialize($folder->getStorage()->getUid(), $folder->getIdentifier());
 
@@ -107,7 +110,9 @@ class FileRepository implements SingletonInterface
         });
 
         foreach ($files as $file) {
-            $return[] = new FileFacade($file, $this->iconFactory);
+            if ($file instanceof FileInterface) {
+                $return[] = $this->fileFacadeFactory->forFileInterface($file);
+            }
         }
 
         return $return;
@@ -125,7 +130,7 @@ class FileRepository implements SingletonInterface
     public function findAllFilesInRecyclerFolder(
         Folder $folder,
         bool $recursive = true,
-        string $fileDenyPattern = null
+        ?string $fileDenyPattern = null
     ): array {
         if ($fileDenyPattern === null) {
             $fileDenyPattern = $this->fileNameDenyPattern;
